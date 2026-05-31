@@ -6,7 +6,6 @@ from sentence_transformers import SentenceTransformer
 from pypdf import PdfReader
 import chromadb
 import os
-
 app = FastAPI()
 load_dotenv()
 ai = genai.Client(
@@ -15,10 +14,14 @@ ai = genai.Client(
 model = SentenceTransformer('all-MiniLM-L6-v2')
 client = chromadb.PersistentClient(path="./chroma_db")
 collection = client.create_collection("chatbot")
+#variable to store chat history
 chat_history = []
+
+#query format
 class Request(BaseModel):
     question : str
 
+#function to rewrite the query based on the conversation history
 def rewrite_query(question: str):
     history_text = ""
 
@@ -45,7 +48,8 @@ def rewrite_query(question: str):
 
     except:
         return question
-    
+
+#function to generate answer based on the context
 def answer_agent(context:str, question:str):
     history_text = ""
 
@@ -74,6 +78,7 @@ def answer_agent(context:str, question:str):
         answer = str(e)
     return answer
 
+#function to validate the generated answer
 def critic_agent(context:str, question:str,ans:str):
     history_text = ""
     for msg in chat_history:
@@ -107,6 +112,7 @@ def critic_agent(context:str, question:str,ans:str):
     return answer
     
 
+
 @app.post("/upload")
 async def upload (file:UploadFile = File(...)):
     with open (file.filename,"wb")as f:
@@ -131,6 +137,8 @@ async def upload (file:UploadFile = File(...)):
         "Message":"File uploaded successfully",
         "Total chunks":len(chunks)
     }
+
+
 
 @app.post("/chat")
 def chat(req:Request):
