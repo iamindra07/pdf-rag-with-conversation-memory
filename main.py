@@ -1,6 +1,7 @@
 from fastapi import FastAPI,UploadFile,File
 from pydantic import BaseModel
 from google import genai
+from openai import OpenAI
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pypdf import PdfReader
@@ -8,8 +9,12 @@ import chromadb
 import os
 app = FastAPI()
 load_dotenv()
-ai = genai.Client(
+ai1 = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
+)
+ai2 = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1",
 )
 model = SentenceTransformer('all-MiniLM-L6-v2')
 client = chromadb.PersistentClient(path="./chroma_db")
@@ -39,16 +44,24 @@ def rewrite_query(question: str):
     Rewrite the question so it is completely standalone.
     Return only the rewritten question.
     """
-
+    
     try:
-        result = ai.models.generate_content(
+        result = ai1.models.generate_content(
             model="gemini-2.5-flash-lite",
             contents=prompt
         )
-        return result.text.strip()
-
-    except:
-        return question
+        return result.text
+    except Exception as e:
+        print(f"Gemini failed: {e}")
+    try:
+        result = ai2.responses.create(
+            input=prompt,
+            model="openai/gpt-oss-20b",
+        )
+        return result.output_text
+    except Exception as e:
+        print(f"OpenAI failed: {e}")
+    return question
 
 #function to generate answer based on the context
 def answer_agent(context:str, question:str):
@@ -76,14 +89,24 @@ def answer_agent(context:str, question:str):
         Do not use outside knowledge.
     """
     try:
-        result = ai.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents= prompt
+        result = ai1.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
         )
         answer = result.text
+        return answer
     except Exception as e:
-        answer = str(e)
-    return answer
+        print(f"Gemini failed: {e}")
+    try:
+        result = ai2.responses.create(
+            input=prompt,
+            model="openai/gpt-oss-20b",
+        )
+        answer = result.output_text
+        return answer
+    except Exception as e:
+        print(f"OpenAI failed: {e}")
+    return "All AI providers are currently unavailable."
 
 #function to validate the generated answer
 def critic_agent(context:str, question:str,ans:str):
@@ -109,15 +132,24 @@ def critic_agent(context:str, question:str,ans:str):
         {ans}
     """
     try:
-        result = ai.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents= prompt
+        result = ai1.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=prompt
         )
         answer = result.text
+        return answer
     except Exception as e:
-        answer = str(e)
-    return answer
-    
+        print(f"Gemini failed: {e}")
+    try:
+        result = ai2.responses.create(
+            input=prompt,
+            model="openai/gpt-oss-20b",
+        )
+        answer = result.output_text
+        return answer
+    except Exception as e:
+        print(f"OpenAI failed: {e}")
+    return ans
 
 
 @app.post("/upload")
@@ -133,11 +165,11 @@ async def upload (file:UploadFile = File(...)):
         if extracted_text:
             text += extracted_text
     chunks = [text[i:i+500] for i in range(0, len(text), 500)]
+    os.remove(file.filename)
     if not chunks:
         return {
             "Message": "No text found in PDF"
         }
-    os.remove(file.filename)
     embeddings = model.encode(chunks).tolist()
     try:
         existing = collection.get(

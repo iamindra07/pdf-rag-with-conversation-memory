@@ -1,33 +1,47 @@
-# PDF RAG Chatbot with FastAPI, ChromaDB & Gemini
+# Multi-Provider RAG Chatbot with Conversation Memory
 
+A Retrieval-Augmented Generation (RAG) chatbot built with FastAPI, ChromaDB, Sentence Transformers, Google Gemini, and Groq. The system supports multi-document retrieval, conversation memory, query rewriting, answer validation, and automatic model fallback.
 
 # This Project is Live now
 
 [Try the Application](https://pdf-rag-with-conversation-memory-production.up.railway.app/docs)
 
-## Overview
-
-A Retrieval-Augmented Generation (RAG) chatbot that allows users to upload PDF documents and ask questions about their contents.
-
-Instead of relying solely on the LLM's knowledge, the chatbot retrieves relevant information from uploaded documents using semantic search and provides grounded answers based on the retrieved context.
-
-The project also includes conversation memory, query rewriting, and answer verification using a critic agent.
-
----
 
 ## Features
 
-* Upload PDF documents
-* Extract text from PDFs
-* Automatic document chunking
-* Generate embeddings using Sentence Transformers
-* Store vectors in ChromaDB
-* Semantic search for relevant context retrieval
-* Gemini-powered answer generation
-* Query rewriting for follow-up questions
-* Conversation memory
-* Critic agent for answer verification
+* Upload and chat with multiple PDF documents
+* Semantic search using Sentence Transformers
+* Vector storage with ChromaDB
+* Conversation memory for follow-up questions
+* Query rewriting for context-aware retrieval
+* Answer validation using a critic agent
+* Multi-provider AI fallback system
+
+  * Google Gemini
+  * Groq (GPT-OSS-20B)
+* Source attribution for retrieved information
 * Persistent vector database storage
+* REST API built with FastAPI
+
+---
+
+## Architecture
+
+User Question
+↓
+Query Rewriter Agent
+↓
+Embedding Generation
+↓
+ChromaDB Vector Search
+↓
+Context Retrieval
+↓
+Answer Generation Agent
+↓
+Critic Agent
+↓
+Final Grounded Answer
 
 ---
 
@@ -37,11 +51,14 @@ The project also includes conversation memory, query rewriting, and answer verif
 
 * Python
 * FastAPI
+* Pydantic
 
 ### AI & NLP
 
 * Google Gemini API
-* Sentence Transformers (`all-MiniLM-L6-v2`)
+* Groq API
+* Sentence Transformers
+* all-MiniLM-L6-v2
 
 ### Vector Database
 
@@ -51,67 +68,30 @@ The project also includes conversation memory, query rewriting, and answer verif
 
 * PyPDF
 
-### Data Validation
-
-* Pydantic
-
----
-
-## Project Architecture
-
-```text
-PDF Upload
-    │
-    ▼
-Text Extraction (PyPDF)
-    │
-    ▼
-Chunking
-    │
-    ▼
-Embeddings (Sentence Transformers)
-    │
-    ▼
-ChromaDB Vector Store
-    │
-    ▼
-Semantic Search
-    │
-    ▼
-Relevant Context
-    │
-    ▼
-Query Rewriter Agent
-    │
-    ▼
-Answer Agent (Gemini)
-    │
-    ▼
-Critic Agent
-    │
-    ▼
-Final Response
-```
-
 ---
 
 ## API Endpoints
 
 ### Upload PDF
 
-```http
 POST /upload
+
+Upload a PDF document and store its embeddings.
+
+Response:
+
+```json
+{
+  "Message": "File uploaded successfully",
+  "Total chunks": 25
+}
 ```
 
-Uploads a PDF, extracts text, generates embeddings, and stores chunks in ChromaDB.
+### Chat with Documents
 
-### Chat with Document
-
-```http
 POST /chat
-```
 
-Example Request:
+Request:
 
 ```json
 {
@@ -119,66 +99,113 @@ Example Request:
 }
 ```
 
-Example Response:
+Response:
 
 ```json
 {
-  "Query": "What is RAM?",
-  "Answer": "RAM stands for Random Access Memory..."
+  "Original Query": "What is RAM?",
+  "Rewritten Query": "What is Random Access Memory (RAM)?",
+  "Sources": [
+    "computer_fundamentals.pdf"
+  ],
+  "Answer": "RAM is..."
 }
 ```
 
 ---
 
-## How It Works
+## Key Components
 
-### 1. PDF Processing
+### Query Rewriter Agent
 
-When a PDF is uploaded:
+Converts follow-up questions into standalone questions.
 
-* Text is extracted using PyPDF.
-* The text is split into chunks.
-* Each chunk is converted into embeddings.
-* Embeddings are stored in ChromaDB.
+Example:
 
-### 2. Retrieval
+User:
 
-When a user asks a question:
+```text
+What is RAM?
+```
 
-* The question is rewritten if necessary using conversation history.
-* The rewritten query is converted into an embedding.
-* ChromaDB performs semantic similarity search.
-* Relevant chunks are retrieved.
+User:
 
-### 3. Generation
+```text
+Why do we need it?
+```
 
-The retrieved context and user question are sent to Gemini.
+Rewritten Query:
 
-Gemini generates an answer grounded in the retrieved document content.
+```text
+Why do we need Random Access Memory (RAM)?
+```
 
-### 4. Verification
+---
 
-A critic agent reviews the generated answer and improves it if necessary to ensure it remains grounded in the retrieved context.
+### Retrieval System
+
+* Converts documents into embeddings
+* Stores vectors in ChromaDB
+* Retrieves the most relevant chunks for a query
+
+---
+
+### Answer Agent
+
+Generates answers strictly from retrieved document context.
+
+If information is not available:
+
+```text
+I could not find this information in the uploaded documents.
+```
+
+---
+
+### Critic Agent
+
+Validates generated answers and removes unsupported claims to reduce hallucinations.
+
+---
+
+### Multi-Provider Fallback
+
+The application automatically switches providers if the primary model fails.
+
+Flow:
+
+```text
+Gemini
+   ↓
+Groq
+   ↓
+Fallback Response
+```
+
+This improves reliability when:
+
+* API quotas are exceeded
+* Rate limits occur
+* A provider becomes unavailable
 
 ---
 
 ## Installation
 
-### Clone Repository
+Clone the repository:
 
 ```bash
-git clone https://github.com/iamindra07/pdf-rag-with-conversation-memory.git
-
-cd pdf-rag-with-conversation-memory
+git clone https://github.com/iamindra07/Multi-Provider-RAG-Chatbot-with-Conversation-Memory.git
+cd Multi-Provider-RAG-Chatbot-with-Conversation-Memory
 ```
 
-### Create Virtual Environment
+Create a virtual environment:
 
 ```bash
 python -m venv venv
 ```
 
-### Activate Virtual Environment
+Activate the environment:
 
 Windows:
 
@@ -186,13 +213,7 @@ Windows:
 venv\Scripts\activate
 ```
 
-Linux/Mac:
-
-```bash
-source venv/bin/activate
-```
-
-### Install Dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -205,7 +226,8 @@ pip install -r requirements.txt
 Create a `.env` file:
 
 ```env
-GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
 ```
 
 ---
@@ -216,7 +238,7 @@ GEMINI_API_KEY=your_api_key_here
 uvicorn main:app --reload
 ```
 
-Open:
+API Documentation:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -224,29 +246,27 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## Learning Outcomes
+## Project Highlights
 
-This project helped me understand:
-
-* Retrieval-Augmented Generation (RAG)
-* Embeddings and vector representations
-* Semantic search
-* Vector databases
-* FastAPI backend development
-* Prompt engineering
-* Multi-agent workflows
-* Document question answering systems
+* Built a complete RAG pipeline from scratch
+* Implemented multi-document retrieval
+* Added conversation memory for contextual chats
+* Added query rewriting for improved retrieval accuracy
+* Implemented answer verification through a critic agent
+* Added automatic AI provider failover
+* Deployed as a production-ready FastAPI service
 
 ---
 
 ## Future Improvements
 
-* Multi-document support
-* Chat session management
-* Source citation highlighting
-* Better chunking strategies
-* Hybrid search (keyword + semantic)
-* Web interface using React
+* Overlapping chunking
+* Hybrid search (Keyword + Vector)
+* Document management APIs
+* Streaming responses
+* Web-based frontend
+* Reranking models
+* User authentication
 
 ---
 
@@ -254,4 +274,14 @@ This project helped me understand:
 
 Indranil Majumder
 
-Backend Developer | Python | FastAPI | AI Applications
+GitHub:
+https://github.com/iamindra07
+
+LinkedIn:
+https://www.linkedin.com/in/indranil-majumder-0086243a1/
+
+---
+
+## License
+
+This project is open-source and available under the MIT License.
