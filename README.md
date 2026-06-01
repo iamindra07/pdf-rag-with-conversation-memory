@@ -1,4 +1,6 @@
 # PDF RAG Chatbot with FastAPI, ChromaDB & Gemini
+##This Project is Live now
+Check it out here : pdf-rag-with-conversation-memory-production.up.railway.app/docs
 
 ## Overview
 
