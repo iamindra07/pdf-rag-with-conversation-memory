@@ -185,15 +185,19 @@ def chat(req:Request):
             set(
                 metadata["source"]
                 for metadata in result["metadatas"][0]
+                if metadata and "source" in metadata
             )
         )
     if result["documents"] and result["documents"][0]:
         context = ""
-        for doc, metadata in zip(
-            result["documents"][0],
-            result["metadatas"][0]
-        ):
-            context += f"\n[Source: {metadata['source']}]\n{doc}\n"
+        metadatas = result.get("metadatas", [[]])[0]
+        for i, doc in enumerate(result["documents"][0]):
+            source = "Unknown"
+            if i < len(metadatas):
+                metadata = metadatas[i]
+                if metadata and "source" in metadata:
+                    source = metadata["source"]
+            context += f"\n[Source: {source}]\n{doc}\n"
     else:
         context = "No relevant context found."
     ans = answer_agent(context,query)
