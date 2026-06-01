@@ -42,7 +42,7 @@ def rewrite_query(question: str):
 
     try:
         result = ai.models.generate_content(
-            model="gemini-3.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=prompt
         )
         return result.text.strip()
@@ -77,7 +77,7 @@ def answer_agent(context:str, question:str):
     """
     try:
         result = ai.models.generate_content(
-            model="gemini-3.5-flash",
+            model="gemini-2.5-flash-lite",
             contents= prompt
         )
         answer = result.text
@@ -110,7 +110,7 @@ def critic_agent(context:str, question:str,ans:str):
     """
     try:
         result = ai.models.generate_content(
-            model="gemini-3.5-flash",
+            model="gemini-2.5-flash-lite",
             contents= prompt
         )
         answer = result.text
