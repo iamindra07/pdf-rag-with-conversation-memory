@@ -3,7 +3,7 @@
 
 # This Project is Live now
 
-Check it out here : pdf-rag-with-conversation-memory-production.up.railway.app/docs
+[Try the Application](pdf-rag-with-conversation-memory-production.up.railway.app/docs)
 
 ## Overview
 
