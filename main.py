@@ -13,9 +13,10 @@ ai = genai.Client(
 )
 model = SentenceTransformer('all-MiniLM-L6-v2')
 client = chromadb.PersistentClient(path="./chroma_db")
-collection = client.create_collection("chatbot")
+collection = client.get_or_create_collection("chatbot")
 #variable to store chat history
 chat_history = []
+
 
 #query format
 class Request(BaseModel):
@@ -53,7 +54,7 @@ def rewrite_query(question: str):
 def answer_agent(context:str, question:str):
     history_text = ""
 
-    for msg in chat_history:
+    for msg in chat_history[-6:]:
         history_text += f"{msg['role']}: {msg['content']}\n"
     
     prompt = f"""
@@ -66,7 +67,13 @@ def answer_agent(context:str, question:str):
         Question:
         {question}
 
-        Answer using the context.
+        Answer ONLY using the provided context.
+
+        If the answer is not present in the context,
+        say:
+        "I could not find this information in the uploaded documents."
+
+        Do not use outside knowledge.
     """
     try:
         result = ai.models.generate_content(
@@ -81,11 +88,11 @@ def answer_agent(context:str, question:str):
 #function to validate the generated answer
 def critic_agent(context:str, question:str,ans:str):
     history_text = ""
-    for msg in chat_history:
+    for msg in chat_history[-6:]:
         history_text += f"{msg['role']}: {msg['content']}\n"
     prompt = f"""
-        using the conversation history(if any), context and answer check the answer is grounded in the context.
-        if weak, improve it. 
+        Verify whether the answer is fully supported by the provided context.
+        If any statement is not supported by the context, remove it. Return only the corrected answer.
         [NOTE: JUST RETURN THE FINAL ANSWER NO NEED TO SAY YOU IMPROVED IT OR THE ANSWER IS ALREADY GROUNDED.
         JUST RETURN THE PROPER CORRECT ANSWER ONLY]
         
@@ -125,13 +132,33 @@ async def upload (file:UploadFile = File(...)):
         extracted_text = page.extract_text()
         if extracted_text:
             text += extracted_text
-    chunks = [text[i:i+100] for i in range(0, len(text), 100)]
+    chunks = [text[i:i+500] for i in range(0, len(text), 500)]
+    if not chunks:
+        return {
+            "Message": "No text found in PDF"
+        }
+    os.remove(file.filename)
     embeddings = model.encode(chunks).tolist()
+    try:
+        existing = collection.get(
+            where={"source": file.filename}
+        )
+        if existing["ids"]:
+            collection.delete(
+                ids=existing["ids"]
+            )
+    except:
+        pass
     for i , chunk in enumerate(chunks):
         collection.add(
             ids=[f"{file.filename}_{i}"],
             documents=[chunk],
-            embeddings=[embeddings[i]]
+            embeddings=[embeddings[i]],
+            metadatas=[
+                {
+                    "source":file.filename
+                }
+            ]
         )
     return {
         "Message":"File uploaded successfully",
@@ -147,10 +174,26 @@ def chat(req:Request):
     query_embedding = model.encode([rewritten_query]).tolist()[0]
     result = collection.query(
         query_embeddings=[query_embedding],
-        n_results=4
+        n_results=6
     )
+    retrieved_chunks = []
     if result["documents"] and result["documents"][0]:
-        context = "\n".join(result["documents"][0])
+        retrieved_chunks = result["documents"][0]
+    sources = []
+    if result["metadatas"] and result["metadatas"][0]:
+        sources = list(
+            set(
+                metadata["source"]
+                for metadata in result["metadatas"][0]
+            )
+        )
+    if result["documents"] and result["documents"][0]:
+        context = ""
+        for doc, metadata in zip(
+            result["documents"][0],
+            result["metadatas"][0]
+        ):
+            context += f"\n[Source: {metadata['source']}]\n{doc}\n"
     else:
         context = "No relevant context found."
     ans = answer_agent(context,query)
@@ -168,6 +211,7 @@ def chat(req:Request):
     return {
     "Original Query": query,
     "Rewritten Query": rewritten_query,
-    "Retrieved Chunks": result["documents"][0],
+    "Sources": sources,
+    "Retrieved Chunks": retrieved_chunks,
     "Answer": final_ans
-    }
+}
