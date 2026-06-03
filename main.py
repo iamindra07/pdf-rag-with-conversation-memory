@@ -5,6 +5,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from pypdf import PdfReader
+from rank_bm25 import BM25Okapi
 import chromadb
 import os
 app = FastAPI()
@@ -21,11 +22,42 @@ client = chromadb.PersistentClient(path="./chroma_db")
 collection = client.get_or_create_collection("chatbot")
 #variable to store chat history
 chat_history = []
-
+all_chunks = []
+all_metadata = []
+bm25 = None
 
 #query format
 class Request(BaseModel):
     question : str
+
+def build_bm25():
+    global bm25
+
+    tokenized_chunks = [
+        chunk.lower().split()
+        for chunk in all_chunks
+    ]
+
+    bm25 = BM25Okapi(tokenized_chunks)
+
+def bm25_search(query, top_k):
+    global bm25
+
+    if bm25 is None:
+        return []
+
+    tokenized_query = query.lower().split()
+
+    scores = bm25.get_scores(tokenized_query)
+
+    ranked_results = sorted(
+        zip(all_chunks, all_metadata, scores),
+        key=lambda x: x[2],
+        reverse=True
+    )
+
+    return ranked_results[:top_k]
+
 
 #function to rewrite the query based on the conversation history
 def rewrite_query(question: str):
@@ -192,6 +224,13 @@ async def upload (file:UploadFile = File(...)):
                 }
             ]
         )
+        all_chunks.append(chunk)
+        all_metadata.append(
+            {
+                "source": file.filename
+            }
+        )
+    build_bm25()
     return {
         "Message":"File uploaded successfully",
         "Total chunks":len(chunks)
@@ -208,30 +247,59 @@ def chat(req:Request):
         query_embeddings=[query_embedding],
         n_results=6
     )
-    retrieved_chunks = []
-    if result["documents"] and result["documents"][0]:
-        retrieved_chunks = result["documents"][0]
-    sources = []
-    if result["metadatas"] and result["metadatas"][0]:
-        sources = list(
-            set(
-                metadata["source"]
-                for metadata in result["metadatas"][0]
-                if metadata and "source" in metadata
+    bm25_results = bm25_search(
+    rewritten_query,
+    top_k=3
+    )
+    vector_results = []
+
+    for doc, metadata in zip(
+        result["documents"][0],
+        result["metadatas"][0]
+    ):
+        vector_results.append(
+            (   
+                doc,
+                metadata,
+                1.0
             )
         )
-    if result["documents"] and result["documents"][0]:
-        context = ""
-        metadatas = result.get("metadatas", [[]])[0]
-        for i, doc in enumerate(result["documents"][0]):
-            source = "Unknown"
-            if i < len(metadatas):
-                metadata = metadatas[i]
-                if metadata and "source" in metadata:
-                    source = metadata["source"]
-            context += f"\n[Source: {source}]\n{doc}\n"
-    else:
-        context = "No relevant context found."
+    combined = vector_results + bm25_results
+    seen = set()
+    unique_results = []
+
+    for doc, metadata, score in combined:
+
+        if doc not in seen:
+            seen.add(doc)
+
+            unique_results.append(
+                (
+                    doc,
+                    metadata
+                )
+            )
+    context = ""
+
+    for doc, metadata in unique_results:
+
+        source = "unknown"
+
+        if metadata:
+            source = metadata.get(
+                "source",
+                "unknown"
+            )
+
+        context += (
+            f"\n[Source: {source}]\n"
+            f"{doc}\n"
+        )
+    retrieved_chunks = [
+        doc
+        for doc, metadata
+        in unique_results
+    ]
     ans = answer_agent(context,query)
     final_ans = critic_agent(context,query,ans)
     
@@ -247,7 +315,7 @@ def chat(req:Request):
     return {
     "Original Query": query,
     "Rewritten Query": rewritten_query,
-    "Sources": sources,
+    "Sources": source,
     "Retrieved Chunks": retrieved_chunks,
     "Answer": final_ans
 }
